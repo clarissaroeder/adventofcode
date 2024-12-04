@@ -20,5 +20,3 @@ if __name__ == "__main__":
 
     except ModuleNotFoundError:
         print(f"No solution implemented for day {args.day}.")
-    except AttributeError:
-        print(f"Day {args.day} does not define a Advent class.")
