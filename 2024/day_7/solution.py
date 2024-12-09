@@ -25,7 +25,6 @@ class Advent:
         elif operator == "||":
             return int(str(num1) + str(num2))
 
-
     def solvable(self, target, numbers, operators):
         def dfs(result, i, operator):
             if i >= len(numbers):
