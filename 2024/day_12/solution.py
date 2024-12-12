@@ -4,7 +4,7 @@ class Advent:
     def __init__(self, input_file):
         self.input_file = Path(__file__).parent / input_file
         self.grid = None
-        self.fenced = {}
+        self.visited = set()
         self.read_input()
 
     def read_input(self):
@@ -18,130 +18,94 @@ class Advent:
     def get_neighbours(self, position):
         row, col = position
         offsets = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-        return [
-            (row + drow, col + dcol)
-            for drow, dcol in offsets
-        ]
+        return [(row + d_row, col + d_col) for d_row, d_col in offsets]
     
-    def calculate_sides(self, edge_rows, edge_cols):
-        total_sides = 0
-        for row, plant_rows in edge_rows.items():
-            print('plant rows:', plant_rows)
+    def count_sequences(self, indices):
+        """
+        Count the number of contiguous sequences in a sorted list of indices -> the number of sides.
 
-            sides = 0
-            for plant_row, cols in plant_rows.items():
-                print('plant_row:', plant_row)
-                cols.sort()
+        Each break in the sequence (i.e., when the next index is not exactly one greater than the current)
+        indicates the start of a new contiguous sequence -> a new side is detected.
+        """
+        sides = 1
+        for i in range(len(indices) - 1):
+            # If the next index is not consecutive, increment the sequence count
+            if indices[i + 1] != indices[i] + 1:
                 sides += 1
-                for i in range(len(cols) - 1):
-                    if cols[i + 1] != cols[i] + 1:
-                        sides += 1
-                
-            total_sides += sides
-            print(f"row {row} has {sides} sides")
+
+        return sides
+    
+    def calculate_total_sides(self, edge_rows, edge_cols):
+        """ 
+        Calculates the total number of sides.
+
+        For each edge row and edge column, there will be the plant rows/columns from
+        which the edge was detected:
+    
+            - A single edge row can have two edges: from the top or bottom
+            - A single edge column can have two edges: from the left or right
+
+        Each edge will have a list representing the indices along which the edge was detected.
+        The number of contiguous, incrementing sequences inside this list of indices
+        represents the number of sides.
+        """
+        total_sides = 0
+
+        for edge_row, plant_rows in edge_rows.items():
+            # sides = 0
+            for plant_row, cols in plant_rows.items():
+                # sort the columns to scan for contiguous sequences of columns
+                cols.sort()
+                total_sides += self.count_sequences(cols)
 
         for col, plant_cols in edge_cols.items():
-            print('plant cols:', plant_cols)
-            
-            sides = 0
             for plant_col, rows in plant_cols.items():
-                print('plant_col:', plant_col)
+                # sort the rows to scan for contiguous sequences of rows
                 rows.sort()
-                sides += 1
-                for i in range(len(rows) - 1):
-                    if rows[i + 1] != rows[i] + 1:
-                        sides += 1
+                total_sides += self.count_sequences(rows)
 
-            total_sides += sides
-            print(f"col {col} has {sides} sides")
 
         return total_sides
     
     def get_circumferences(self, region):
+        """Calculates perimeter and sides of a given region"""
         perimeter = 0
 
-        edge_rows = {}
-        edge_cols = {}
-        # print('REGION:', region)
-        # sorted_region = sorted(region)
-        # print('SORTED:', sorted_region)
-        # print("")
+        edge_rows = {} # Edge rows: {edge_row_index: {plant_row_index: [edge_cols]}} -> plant_row_index = the plant row from which the edge was detected
+        edge_cols = {} # Edge columns: {edge_col_index: {plant_col_index: [edge_rows]}} -> plant_col_index = the plant col from which the edge was detected
 
         for plant in region:
-            print('CURRENT PLANT:', plant)
             plant_row, plant_col = plant
-            
             neighbours = self.get_neighbours(plant)
-            shared_sides = 0
+            shared_edges = 0
+
             for neighbour in neighbours:
+                # If neighbour is in the same region, the edge is shared
                 if neighbour in region:
-                    shared_sides += 1
+                    shared_edges += 1
+                # If the neighbour is not in the same region, it's an outside edge
                 else:
-                    print('edge neighbour:', neighbour)
                     n_row, n_col = neighbour
 
+                    # Horizontal edges
                     if n_row != plant_row:
-                        print(f"plant row {plant_row}: appending edge column {n_col} to edge row {n_row}")
-                        print("")
-                        if edge_rows.get(n_row, []):
-                            if edge_rows[n_row].get(plant_row, []):
-                                edge_rows[n_row][plant_row].append(n_col)
-                            else:
-                                edge_rows[n_row][plant_row] = [n_col]
-                        else: 
-                            edge_rows[n_row]= { plant_row: [n_col] }
+                        edge_rows.setdefault(n_row, {}).setdefault(plant_row, []).append(n_col)
 
+                    # Vertical edges
                     if n_col != plant_col:
-                        print(f"plant col {plant_col}: appending edge row {n_row} to edge col {n_col}")
-                        print("")
-                        if edge_cols.get(n_col, []):
-                            if edge_cols[n_col].get(plant_col, []):
-                                edge_cols[n_col][plant_col].append(n_row)
-                            else:
-                                edge_cols[n_col][plant_col] = [n_row]
-                        else:
-                            edge_cols[n_col] = { plant_col: [n_row] }
+                        edge_cols.setdefault(n_col, {}).setdefault(plant_col, []).append(n_row)
         
+            # Each cell contributes 4 sides minus the shared sides to the perimeter
+            perimeter += (4 - shared_edges)
 
-            perimeter += (4 - shared_sides)
-
-        # sorted_region = sorted(region, key=lambda x: (x[1], x[0]))
-
-        # for plant in sorted_region:
-        #     print('CURRENT PLANT:', plant)
-        #     plant_row, plant_col = plant
-            
-        #     neighbours = self.get_neighbours(plant)
-        #     for neighbour in neighbours:
-        #         if neighbour in region:
-        #             continue
-        #         else:
-        #             print('edge neighbour:', neighbour)
-        #             n_row, n_col = neighbour
-
-        #             if n_col != plant_col:
-        #                 if edge_cols.get(n_col, []):
-        #                     edge_cols[n_col].append(n_row)
-        #                 else:
-        #                     edge_cols[n_col] = [n_row]
-
-
-        # print("")
-        # print('REGION:', region)
-        # print('SORTED:', sorted_region)
-        print("")
-        print('edge rows:', edge_rows)
-        print('edge_cols:', edge_cols)
-        print("")
-        sides = self.calculate_sides(edge_rows, edge_cols)
+        # Calculate total distinct sides
+        sides = self.calculate_total_sides(edge_rows, edge_cols)
         return (perimeter, sides)
 
     def calculate_fence_prices(self):
         def bfs(start_position, plant):
-            print(f"plant {plant}")
             queue = [start_position]
-            visited = {}
-
+            visited_local = set()
             region = []
 
             while queue:
@@ -150,14 +114,14 @@ class Advent:
                 if self.out_of_bounds(current):
                     continue
 
-                if visited.get(current, False):
+                if current in visited_local:
                         continue
                 
                 if self.grid[current[0]][current[1]] != plant:
                     continue
 
-                visited[current] = True
-                self.fenced[current] = True
+                self.visited.add(current)
+                visited_local.add(current)
                 region.append(current)
 
                 neighbours = self.get_neighbours(current)
@@ -165,32 +129,20 @@ class Advent:
 
             area = len(region)
             perimeter, sides = self.get_circumferences(region)
-            print("")
-            print('area:', area)
-            print('perimeter:', perimeter)
-            print('sides:', sides)
-            print("------------------------")
-            print("")
 
             return (area * perimeter, area * sides)
-        
 
         total = 0
         total_discounted = 0
         for i, row in enumerate(self.grid):
             for j, plant in enumerate(row):
-                if not self.fenced.get((i, j), []):
+                if (i, j) not in self.visited:
                     price, discounted_price = bfs((i, j), plant)
                     total += price
                     total_discounted += discounted_price
 
-        print('total fence price:', total)
-        print('total discounted fence price:', total_discounted)
+        print('Total fence price:', total)
+        print('Total discounted fence price:', total_discounted)
 
     def solve(self):
         self.calculate_fence_prices()
-
-
-# 975248 too high
-# 833505 too high
-# 830042 too low
