@@ -10,9 +10,5 @@ class Advent:
         with open(self.input_file, 'r') as file:
             self.data = [line.strip() for line in file]
 
-    def parse_data(self):
-        pass
-
     def solve(self):
-        self.parse_data()
-
+        pass
