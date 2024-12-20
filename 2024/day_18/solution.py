@@ -18,8 +18,6 @@ class Advent:
         col, row = byte
         self.grid[row][col] = "#"
 
-    
-        
     def print_grid(self):
         for row in self.grid:
             print("".join(row))
