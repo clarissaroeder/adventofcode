@@ -1,24 +1,9 @@
 from pathlib import Path
 from collections import deque
-import heapq
-import itertools
-
+from itertools import product
 class Keyboard:
-    # Mapping direction instructions to movement deltas
-    DIRECTIONS = { (0, 1): '>', (0, -1): '<', (1, 0): 'v', (-1, 0): '^'}
-
     def __init__(self):
         self.keyboard = []
-
-    def get_instructions(self):
-        # self.instructions = { key: { every other key: [[sequence 1], [sequence 2], all possible sequences ] }}
-        self.instructions = {}
-        for i, row in enumerate(self.keyboard):
-            for j, key in enumerate(row):
-                # Skip empty field
-                if key == 'X': continue
-                inst = self.find_shortest_instruction_sequences((i, j))
-                self.instructions[key] = inst
 
     def out_of_bounds(self, position):
         row, col = position
@@ -26,71 +11,61 @@ class Keyboard:
 
     def get_neighbours(self, position):
         row, col = position
-        offsets = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-        return [(row + d_row, col + d_col) for d_row, d_col in offsets]
+        offsets = [(0, -1, '<'), (0, 1, '>'), (-1, 0, '^'), (1, 0, 'v')]
+        return [(row + d_row, col + d_col, d_move) for d_row, d_col, d_move in offsets]
     
     def manhattan_distance(self, point1, point2):
         return abs(point1[0] - point2[0]) + abs(point1[1] - point2[1])
 
-    def backtrack(self, current, path, result, goal, manhattan):
-        if current == goal:
-            if len(path) - 1 == manhattan:
-                result.append(path.copy())
-            return
-        
-        for neighbour in self.get_neighbours(current):
-            if neighbour in path or self.out_of_bounds(neighbour) or self.keyboard[neighbour[0]][neighbour[1]] == 'X':
-                continue
+    def compute_instructions(self):
+        key_positions = {} # { 7: (0,0), ...}
+        for i in range(len(self.keyboard)):
+            for j in range(len(self.keyboard[i])):
+                if self.keyboard[i][j] != 'X': 
+                    key_positions[self.keyboard[i][j]] = (i, j)
 
-            remaining_manhattan = self.manhattan_distance(neighbour, goal)
-            steps_taken = len(path)
-            
-            if (steps_taken + remaining_manhattan) > manhattan:
-                continue
+        self.instructions = {}
+        # for every key on the pad find instructions to every key on the pad
+        for x in key_positions:
+            for y in key_positions:
+                if x == y: 
+                    self.instructions[(x, y)] = ['A'] # from any key to itself: single A to press it
+                    continue
 
-            path.append(neighbour)
-            self.backtrack(neighbour, path, result, goal, manhattan)
-            path.pop()
+                # bfs
+                sequences = [] # find all the best sequences
+                moves_taken = ""
+                manhattan = self.manhattan_distance(key_positions[x], key_positions[y])
+                queue = deque([(key_positions[x], moves_taken)])
 
-    def convert_paths_to_instructions(self, paths):
-        instructions = []       
-        for path in paths:
-            current_instructions = []        
-            for current in range(len(path) - 1):
-                row, col = path[current]
-                next_row, next_col = path[current + 1]
+                while queue:
+                    (row, col), moves = queue.popleft()
 
-                d_row = next_row - row
-                d_col = next_col - col
+                    # don't find paths that are longer than manhattan distance to only find direct paths
+                    if len(moves) > manhattan:
+                        break
 
-                direction = self.DIRECTIONS[(d_row, d_col)]
-                current_instructions.append(direction)
+                    # goal reached
+                    if self.keyboard[row][col] == y:
+                        sequences.append(moves + 'A') # current possible sequence: all moves taken, plus the neigbhbour move + press button
+                    
+                    neighbours = self.get_neighbours((row, col)) # neighbour = (row, col, move to get there)
+                    for neighbour in neighbours:
+                        n_row, n_col, n_move = neighbour
+                        # validity checks: out of bounds and empty key
+                        if self.out_of_bounds((n_row, n_col)) or self.keyboard[n_row][n_col] == 'X':
+                            continue
 
-            instructions.append(current_instructions)
-        return instructions
+                        queue.append(((n_row, n_col), moves + n_move))
 
-    def find_shortest_instruction_sequences(self, origin):
-        instructions = {}
-        for i, row in enumerate(self.keyboard):
-            for j, key in enumerate(row):
-                # Skip empty space
-                if key == 'X': continue
-                manhattan = self.manhattan_distance(origin, (i, j))
-                result = []
-                path = [origin]
-                self.backtrack(origin, path, result, (i, j), manhattan)
-                instructions[key] = self.convert_paths_to_instructions(result)
-
-        return instructions
+                self.instructions[(x, y)] = sequences
     
     def get_instruction(self, origin, goal):
-        instruction_sequences = self.instructions[origin][goal]
-        return instruction_sequences
+        return self.instructions[origin][goal]
 
     def print_instructions(self):
-        for origin, goals in self.instructions.items():
-            for goal, instructions in goals.items():
-                print(f'From {origin} to {goal}: {instructions}')
+        for (origin, goal), instructions in self.instructions.items():
+            print(f'From {origin} to {goal}: {instructions}')
 
     def __str__(self):
         lines = []
@@ -104,183 +79,72 @@ class Keyboard:
         lines.append(bottom)
 
         return '\n'.join(lines)
-
 class NumericKeyboad(Keyboard):
     def __init__(self):
         super().__init__()
         self.keyboard = [['7', '8', '9'], ['4', '5', '6'], ['1', '2', '3'], ['X', '0', 'A']]
-        self.get_instructions()
+        self.compute_instructions()
 
 class DirectionalKeyboard(Keyboard):
     def __init__(self):
         super().__init__()
         self.keyboard = [['X', '^', 'A'], ['<', 'v', '>']]
-        self.get_instructions()
+        self.compute_instructions()
 
 class Advent:
+    MAX_LEVEL = 4
+
     def __init__(self, input_file):
         self.input_file = Path(__file__).parent / input_file
         self.read_input()
+        self.numeric_kb = NumericKeyboad()
+        self.directional_kb = DirectionalKeyboard()
+        self.cache = {}
 
     def read_input(self):
         with open(self.input_file, 'r') as file:
-            self.codes = [list(line.strip()) for line in file]
+            self.codes = [line.strip() for line in file]
 
-    def calculate_complexity(self, code, sequence):
-        num_string = ''
-        for num in code:
-            if num != 'A':
-                num_string += num
-        
-        num = int(num_string)
-        complexity = num * len(sequence)
+    def calculate_complexity(self, code, length):
+        code_num = int(''.join(char for char in code if char != 'A'))
+        complexity = code_num * length
         print("")
-        print('num1', num, 'num2:', len(sequence))
+        print('Code:', code, 'Shortest sequence length:', length)
         print('Complexity:', complexity)
         print("-------------------------")
 
         return complexity
 
-    def find_sequence(self, code):
-        print("CODE:", code)
-        numeric_kb = NumericKeyboad()
-        directional_kb = DirectionalKeyboard()
+    def get_instructions(self, code, keyboard):
+        # get each consecutive pair, starting at 'A'
+        pairs = list(zip('A' + code, code))
 
-        START = 'A'
+        # get the instruction options for each pair
+        options = [keyboard.instructions[(pair)] for pair in pairs]
 
-        # min_sequence_length = float('inf')
-        # best_sequence_1 = []
-        current = START
-        first_sequences = []
-        for key in code:
-            instructions = numeric_kb.get_instruction(current, key)
-            new_sequences = []
-            for instruction in instructions:
-                if len(first_sequences) == 0:
-                    current_sequence = []
-                    current_sequence.extend(instruction)
-                    current_sequence.append('A') # push the button
-                    new_sequences.append(current_sequence)
-                else:
-                    for sequence in first_sequences:
-                        current_sequence = sequence.copy()
-                        current_sequence.extend(instruction)
-                        current_sequence.append('A') # push the button
-                        new_sequences.append(current_sequence)
-
-            first_sequences = new_sequences
-            current = key
-
-        second_sequences = []
-        for sequence_1 in first_sequences:
-            current = START
-            temp_sequences = []
-            # print('current first sequence:', sequence_1)
-            for key in sequence_1:
-                instructions = directional_kb.get_instruction(current, key)
-                new_sequences = []
-                # print('possible instruction sequences:', instructions)
-                for instruction in instructions:
-                    if len(temp_sequences) == 0:
-                        current_sequence = []
-                        current_sequence.extend(instruction)
-                        current_sequence.append('A') # push the button
-                        new_sequences.append(current_sequence)
-                    else:
-                        for sequence in temp_sequences:
-                            current_sequence = sequence.copy()
-                            current_sequence.extend(instruction)
-                            current_sequence.append('A') # push the button
-                            new_sequences.append(current_sequence)
-
-                temp_sequences = new_sequences
-                current = key
-            
-            second_sequences.extend(temp_sequences)
-
-        # print('second sequences:')
-        # for seq in second_sequences:
-        #     print(len(seq))
-        #     print(seq)
-        # input()
-
-
-        third_sequences = []
-        for sequence_2 in second_sequences:
-            current = START
-            temp_sequences = []
-            # print('current second sequence:', sequence_2)
-            for key in sequence_2:
-                instructions = directional_kb.get_instruction(current, key)
-                new_sequences = []
-                # print('possible instruction sequences:', instructions)
-                for instruction in instructions:
-                    if len(temp_sequences) == 0:
-                        current_sequence = []
-                        current_sequence.extend(instruction)
-                        current_sequence.append('A') # push the button
-                        new_sequences.append(current_sequence)
-                    else:
-                        for sequence in temp_sequences:
-                            current_sequence = sequence.copy()
-                            current_sequence.extend(instruction)
-                            current_sequence.append('A') # push the button
-                            new_sequences.append(current_sequence)
-
-                temp_sequences = new_sequences
-                current = key
-            
-            third_sequences.extend(temp_sequences)
-
-        shortest = min(third_sequences, key=len)
-        print(shortest)
-        print(len(shortest))
-        return self.calculate_complexity(code, shortest)
-
-        # print('thir sequences:')
-        # for seq in third_sequences:
-        #     print(seq)
-        # input()
-
-        # print("")
-        # print('First sequence(instructions for robot 1 to press numeric):', "".join(sequence_1))
-        # print("----------")
-
-        # print(directional_kb)
-        # current = START
-        # sequence_2 = []
-        # for key in sequence_1:
-        #     instructions = directional_kb.get_instruction(current, key)
-        #     sequence_2.extend(instructions)
-        #     sequence_2.append('A') # push the button
-        #     current = key
-
-        # print("")
-        # print('Second sequence(instructions for robot 2 to press dir 1):', "".join(sequence_2))
-        # print("----------")
-
-        # current = START
-        # sequence_3 = []
-        # for key in sequence_2:
-        #     instructions = directional_kb.get_instruction(current, key)
-        #     sequence_3.extend(instructions)
-        #     sequence_3.append('A') # push the button
-        #     current = key
-
-        # print("")
-        # print('Third sequence(instructions for robot 3 to press dir 3):', "".join(sequence_3))
-        # print("----------")
-
-        # return self.calculate_complexity(code, sequence_3)
+        # to get all possible combinations, take cartesian product
+        instructions = ["".join(product) for product in product(*options)]
+        return instructions
 
     def solve(self):
+        print(self.numeric_kb)
+        print("\n--------------------\n")
+        print(self.directional_kb)
+        print("\n--------------------")
+
         sum = 0
         for code in self.codes:
-            sum += self.find_sequence(code)
+            robot1 = self.get_instructions(code, self.numeric_kb)
 
-        print("Total complexity sum:", sum)
+            current_robot = robot1
+            for i in range(2):
+                next_robot = []
+                for sequence in current_robot:
+                    next_robot.extend(self.get_instructions(sequence, self.directional_kb))
+                
+                min_length = min(map(len, next_robot))
+                current_robot = [seq for seq in next_robot if len(seq) ==  min_length]
 
-# Numerical keyboard: has robot 1 -> gets instructions from first directional keyboard -> SEQUENCE 1
-# First directional keyboard: has robot 2 -> gets instructions from second directional keyboard -> SEQUENCE 2
-# Second directional keyboard: has robot 3 -> gets instructions from third directional keyboard -> SEQUENCE 3
-# Third directional keyboard: has me -> find buttons I need to press to give instructions to second directional keyboard
+            sum += self.calculate_complexity(code, min_length)
+
+        print("Total Complexity:", sum)
