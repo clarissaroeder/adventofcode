@@ -2,8 +2,10 @@ from pathlib import Path
 from collections import deque
 from itertools import product
 class Keyboard:
-    def __init__(self):
-        self.keyboard = []
+    def __init__(self, keyboard):
+        self.keyboard = keyboard
+        self.compute_instructions()
+        self.compute_lengths()
 
     def out_of_bounds(self, position):
         row, col = position
@@ -24,7 +26,7 @@ class Keyboard:
                 if self.keyboard[i][j] != 'X': 
                     key_positions[self.keyboard[i][j]] = (i, j)
 
-        self.instructions = {}
+        self.instructions = {} # { (x, y): ['<vA', 'v<A'], ...}
         # for every key on the pad find instructions to every key on the pad
         for x in key_positions:
             for y in key_positions:
@@ -59,9 +61,9 @@ class Keyboard:
                         queue.append(((n_row, n_col), moves + n_move))
 
                 self.instructions[(x, y)] = sequences
-    
-    def get_instruction(self, origin, goal):
-        return self.instructions[origin][goal]
+
+    def compute_lengths(self):
+        self.lengths = {pair: len(instruction[0]) for pair, instruction in self.instructions.items()}
 
     def print_instructions(self):
         for (origin, goal), instructions in self.instructions.items():
@@ -79,26 +81,13 @@ class Keyboard:
         lines.append(bottom)
 
         return '\n'.join(lines)
-class NumericKeyboad(Keyboard):
-    def __init__(self):
-        super().__init__()
-        self.keyboard = [['7', '8', '9'], ['4', '5', '6'], ['1', '2', '3'], ['X', '0', 'A']]
-        self.compute_instructions()
-
-class DirectionalKeyboard(Keyboard):
-    def __init__(self):
-        super().__init__()
-        self.keyboard = [['X', '^', 'A'], ['<', 'v', '>']]
-        self.compute_instructions()
 
 class Advent:
-    MAX_LEVEL = 4
-
     def __init__(self, input_file):
         self.input_file = Path(__file__).parent / input_file
         self.read_input()
-        self.numeric_kb = NumericKeyboad()
-        self.directional_kb = DirectionalKeyboard()
+        self.numeric_kb = Keyboard([['7', '8', '9'], ['4', '5', '6'], ['1', '2', '3'], ['X', '0', 'A']])
+        self.directional_kb = Keyboard([['X', '^', 'A'], ['<', 'v', '>']])
         self.cache = {}
 
     def read_input(self):
@@ -106,18 +95,16 @@ class Advent:
             self.codes = [line.strip() for line in file]
 
     def calculate_complexity(self, code, length):
-        code_num = int(''.join(char for char in code if char != 'A'))
+        code_num = int(code[:-1])
         complexity = code_num * length
-        print("")
-        print('Code:', code, 'Shortest sequence length:', length)
-        print('Complexity:', complexity)
-        print("-------------------------")
-
+        # print(f"Code: {code} - Min length: {length}\nComplexity: {complexity}")
+        # print("--------------------\n")
         return complexity
 
-    def get_instructions(self, code, keyboard):
+    # gets all instruction sequences for a given string on the given keyboard
+    def get_instructions(self, string, keyboard):
         # get each consecutive pair, starting at 'A'
-        pairs = list(zip('A' + code, code))
+        pairs = list(zip('A' + string, string))
 
         # get the instruction options for each pair
         options = [keyboard.instructions[(pair)] for pair in pairs]
@@ -125,25 +112,61 @@ class Advent:
         # to get all possible combinations, take cartesian product
         instructions = ["".join(product) for product in product(*options)]
         return instructions
+    
+    # returns length of shortest instruction sequence between two points at a certain depth
+    def compute_length(self, x, y, depth=25):
+        key = (x, y, depth)
+        if key in self.cache:
+            return self.cache.get(key)
+
+        # depth 1 will not need further computation as that is the instructions we
+        # need to give to the last robot, and we don't movement instructions ourselves
+        if depth == 1:
+            min_length = self.directional_kb.lengths[(x, y)]
+            self.cache[(x, y, depth)] = min_length
+            return min_length
+
+        min_length = float('inf')
+        for sequence in self.directional_kb.instructions[(x, y)]:
+            pairs = list(zip('A' + sequence, sequence))
+            length = 0
+            for x, y in pairs:
+                result = self.compute_length(x, y, depth - 1)
+                length += result
+
+            if length < min_length: 
+                min_length = length 
+
+        self.cache[key] = min_length
+        return min_length
 
     def solve(self):
-        print(self.numeric_kb)
-        print("\n--------------------\n")
-        print(self.directional_kb)
-        print("\n--------------------")
-
         sum = 0
         for code in self.codes:
+            # get the instruction sequences for the numeric keyboard first
             robot1 = self.get_instructions(code, self.numeric_kb)
 
-            current_robot = robot1
-            for i in range(2):
-                next_robot = []
-                for sequence in current_robot:
-                    next_robot.extend(self.get_instructions(sequence, self.directional_kb))
+            ### * Part 1: Iteration
+            # current_robot = robot1
+            # for i in range(2):
+            #     next_robot = []
+            #     for sequence in current_robot:
+            #         next_robot.extend(self.get_instructions(sequence, self.directional_kb))
                 
-                min_length = min(map(len, next_robot))
-                current_robot = [seq for seq in next_robot if len(seq) ==  min_length]
+            #     min_length = min(map(len, next_robot))
+            #     current_robot = [seq for seq in next_robot if len(seq) ==  min_length]
+
+            ### * Part 2: Change to recursion
+            min_length = float('inf')
+            for sequence in robot1:
+                pairs = list(zip('A' + sequence, sequence))
+                length = 0
+                for x, y in pairs:
+                    result = self.compute_length(x, y)
+                    length += result
+
+                if length < min_length: 
+                    min_length = length
 
             sum += self.calculate_complexity(code, min_length)
 
