@@ -52,7 +52,7 @@ class Advent:
         parties = set()
         for computer, connections in self.network.items():
             party_found = False
-            for i in range(len(connections) + 1, 2, -1):
+            for i in range(len(connections), 1, -1):
                 pairs = list(combinations(list(connections), i))
                 for pair in pairs:
                     if self.party(pair):
