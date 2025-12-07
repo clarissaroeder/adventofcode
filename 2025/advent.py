@@ -7,8 +7,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input",
         "-i",
-        default="input.txt",
-        help="Input file to load (default: input.txt)",
+        default="example.txt",
+        help="Input file to load (default: example.txt)",
     )
     parser.add_argument(
         "--part",
